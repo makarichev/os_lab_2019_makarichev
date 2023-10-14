@@ -19,6 +19,7 @@ int main(int argc, char **argv) {
   int seed = -1;
   int array_size = -1;
   int pnum = -1;
+  int by_files=0;
   bool with_files = false;
 
   while (true) {
@@ -27,7 +28,7 @@ int main(int argc, char **argv) {
     static struct option options[] = {{"seed", required_argument, 0, 0},
                                       {"array_size", required_argument, 0, 0},
                                       {"pnum", required_argument, 0, 0},
-                                      {"by_files", no_argument, 0, 'f'},
+                                      {"by_files", required_argument, 0, 0},
                                       {0, 0, 0, 0}};
 
     int option_index = 0;
@@ -41,17 +42,26 @@ int main(int argc, char **argv) {
           case 0:
             seed = atoi(optarg);
             // your code here
+            if (seed<=0){
+              printf("Seed must be a positive number\n");
+              return 1;
+            }
             // error handling
             break;
           case 1:
             array_size = atoi(optarg);
-            // your code here
-            // error handling
+            if (array_size<=0){
+              printf("Array size must be a positive number\n");
+              return 1;
+            }
             break;
           case 2:
             pnum = atoi(optarg);
             // your code here
-            // error handling
+            if (pnum<=0){
+              printf("Process number must be a positive number\n");
+              return 1;
+            }            
             break;
           case 3:
             with_files = true;
@@ -63,9 +73,11 @@ int main(int argc, char **argv) {
         break;
       case 'f':
         with_files = true;
+        printf("check with_files status");
         break;
 
       case '?':
+        printf("Unknown error");
         break;
 
       default:
@@ -84,6 +96,13 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  by_files=1;
+  printf("%d",by_files);
+  if (by_files == 1) {
+    with_files=true;
+  }
+  printf("%d",with_files);
+
   int *array = malloc(sizeof(int) * array_size);
   GenerateArray(array, array_size, seed);
   int active_child_processes = 0;
@@ -91,32 +110,84 @@ int main(int argc, char **argv) {
   struct timeval start_time;
   gettimeofday(&start_time, NULL);
 
+ int step=array_size/pnum;
+
+    FILE* fl;
+    int** pipefd;
+    printf("%d",with_files);
+    if (with_files) {
+        fl=fopen("test.txt","wb+");
+        printf("success");
+    }
+    else {
+        pipefd=(int**)malloc(sizeof(int*) * pnum);
+        printf("%d",with_files);
+      
+    }
+
   for (int i = 0; i < pnum; i++) {
+    if (!with_files){
+             printf("error");
+            pipefd[i]=(int*)malloc(sizeof(int)*2);
+            if (pipe(pipefd[i])==-1) {
+                printf("pipe failed");
+                return 1;
+            }
+
+
+    }
+
     pid_t child_pid = fork();
-    if (child_pid >= 0) {
+    if (child_pid >= 0) {      
       // successful fork
       active_child_processes += 1;
       if (child_pid == 0) {
-        // child process
 
+        // child process
+        printf("Pipe was created\n");
+        struct  MinMax min_max_i;
+      
         // parallel somehow
+        if (i!=pnum-1){
+            min_max_i=GetMinMax(array,i*step,(i+1)*step-1) ;
+        }
+        else{
+            min_max_i=GetMinMax(array,i*step,array_size) ;
+        }     
+        
 
         if (with_files) {
           // use files here
-        } else {
+          printf("success");
+          fwrite(&min_max_i.min,sizeof(int),1,fl);
+          fwrite(&min_max_i.max,sizeof(int),1,fl);
+      
+         } 
+         else {
           // use pipe here
+          write(pipefd[i][1],&min_max_i.min,sizeof(int));
+          write(pipefd[i][1],&min_max_i.max,sizeof(int));
+
+          close(pipefd[i][1]);
         }
         return 0;
       }
 
-    } else {
-      printf("Fork failed!\n");
+     } else {
+      printf("fork failed\n");
       return 1;
     }
   }
+  
+    if(with_files){ 
+      fclose(fl);
+      fl=fopen("test.txt","r");
+    }
+
 
   while (active_child_processes > 0) {
     // your code here
+    wait(NULL);
 
     active_child_processes -= 1;
   }
@@ -131,13 +202,34 @@ int main(int argc, char **argv) {
 
     if (with_files) {
       // read from files
+        fread(&min,sizeof(int),1,fl);
+        fread(&max,sizeof(int),1,fl);
+
     } else {
       // read from pipes
+
+     read(pipefd[i][0],&min,sizeof(int));
+     read(pipefd[i][0],&max,sizeof(int));
+
+     close(pipefd[i][0]);
+
+     free(pipefd[i]);
+
     }
 
     if (min < min_max.min) min_max.min = min;
     if (max > min_max.max) min_max.max = max;
   }
+
+  
+
+    if (with_files) {
+        fclose(fl);
+    }
+    else {
+        free(pipefd);
+    }
+
 
   struct timeval finish_time;
   gettimeofday(&finish_time, NULL);
